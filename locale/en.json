@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Tool Switch & Hygiene",
+    "description": "Switch which tools a conversation can call (user and agent), and inject a tool-hygiene prompt policy: the agent prunes unneeded tool families first and re-enables them on demand."
+  }
+}

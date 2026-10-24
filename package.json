@@ -1,0 +1,32 @@
+{
+  "name": "@local/tool-switch",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Switch which tools a conversation can call, from a settings page, from chat, or from the agent — and inject a tool-hygiene prompt policy so the agent prunes unneeded tool families itself.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./groups": "./groups.js",
+    "./store": "./store.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "groups.js",
+    "store.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}

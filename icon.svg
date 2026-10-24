@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Tool Switch">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1f6feb" opacity="0.12"/>
+  <rect x="10" y="12" width="44" height="16" rx="8" fill="#1f6feb"/>
+  <circle cx="46" cy="20" r="6" fill="#ffffff"/>
+  <rect x="10" y="36" width="44" height="16" rx="8" fill="#8b949e" opacity="0.35"/>
+  <circle cx="18" cy="44" r="6" fill="#ffffff"/>
+</svg>
