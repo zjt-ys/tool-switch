@@ -166,54 +166,6 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    /** Fold the session event window into the switch state the header shows. */
-    function foldWindow(snapshot) {
-      const disabled = new Set();
-      const commandIds = new Map();
-      const toolCalls = new Map();
-      for (const entry of snapshot?.entries ?? []) {
-        const event = entry?.event;
-        if (event === undefined || event === null) continue;
-        const data = event.data;
-        if (event.type === 'command/run' && data?.name === CMD) {
-          commandIds.set(data.commandId, data.name);
-          continue;
-        }
-        if (
-          event.type === 'command/done' &&
-          commandIds.has(data?.commandId) &&
-          data.kind === 'success' &&
-          typeof data.text === 'string'
-        ) {
-          const summary = parseSummary(data.text);
-          if (summary !== null) {
-            disabled.clear();
-            for (const name of summary) disabled.add(name);
-          }
-          continue;
-        }
-        if (event.type === 'tool/call' && data?.name === 'tool_switch') {
-          toolCalls.set(data.callId, true);
-          continue;
-        }
-        if (event.type === 'tool/result' && toolCalls.has(data?.message?.toolCallId)) {
-          const blocks = data?.message?.content;
-          if (Array.isArray(blocks)) {
-            const text = blocks
-              .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-              .map((block) => block.text)
-              .join('\n');
-            const summary = parseSummary(text);
-            if (summary !== null) {
-              disabled.clear();
-              for (const name of summary) disabled.add(name);
-            }
-          }
-        }
-      }
-      return { disabled };
-    }
-
     /** Read the Host's catalogue, groups, and global default. */
     async function loadState() {
       const response = await fetch(API + '/state', { headers: { accept: 'application/json' } });
@@ -231,16 +183,6 @@ window.__ModuleLoader__.load({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? payload.message ?? 'HTTP ' + response.status);
       return payload;
-    }
-
-    /** Run one switch command through the Session's own command plane. */
-    async function runCommand(ctx, sessionId, line) {
-      const binding = ctx.sessions.binding(sessionId);
-      if (binding === undefined) return { ok: false, reason: 'session is not retained' };
-      const carried = await binding.session.command(line);
-      if (carried?.ok === true) return { ok: true };
-      const failure = carried?.error;
-      return { ok: false, reason: failure?.message ?? failure?.code ?? 'unknown failure' };
     }
 
     const COLORS = {
@@ -371,13 +313,11 @@ window.__ModuleLoader__.load({
       const [draftParent, setDraftParent] = React.useState('');
       const [draftMembers, setDraftMembers] = React.useState([]);
       const [creating, setCreating] = React.useState(false);
-      const [disabledLocal, setDisabledLocal] = React.useState(() => new Set());
       // 提示词策略区块的本地编辑态；进入页面时从 snapshot 初始化。
       const [policyDraft, setPolicyDraft] = React.useState(null);
       const [policyDirty, setPolicyDirty] = React.useState(false);
       /** ref mirror of policyDirty so the refresh callback can read it without a dep loop. */
       const policyDirtyRef = React.useRef(false);
-      const sessionId = props.sessionId;
 
       /** Deep-copy the policy from a snapshot into an editable draft. */
       function clonePolicy(policy) {
@@ -407,20 +347,6 @@ window.__ModuleLoader__.load({
         void refresh();
       }, [refresh]);
 
-      const refreshLocal = React.useCallback(() => {
-        const binding = ctx.sessions.binding(sessionId);
-        if (binding === undefined) return;
-        setDisabledLocal(foldWindow(binding.eventSource.getSnapshot()).disabled);
-      }, [ctx, sessionId]);
-
-      React.useEffect(() => {
-        if (sessionId === undefined) return undefined;
-        refreshLocal();
-        const binding = ctx.sessions.binding(sessionId);
-        if (binding === undefined) return undefined;
-        return binding.eventSource.subscribe(() => refreshLocal());
-      }, [sessionId, ctx, refreshLocal]);
-
       const nodes = React.useMemo(() => {
         const map = new Map();
         for (const node of state?.groups ?? []) map.set(node.id, node);
@@ -435,12 +361,6 @@ window.__ModuleLoader__.load({
         () => new Set(state?.global?.disabled ?? []),
         [state],
       );
-
-      const runLocal = async (line) => {
-        if (sessionId === undefined) return;
-        const outcome = await runCommand(ctx, sessionId, line);
-        if (outcome.ok === false) setError(fill(t('failed'), { reason: outcome.reason }));
-      };
 
       const manage = async (body) => {
         setBusy(true);
@@ -1098,61 +1018,6 @@ window.__ModuleLoader__.load({
               border: '1px solid ' + COLORS.border,
               borderRadius: '10px',
               padding: '12px',
-              background: COLORS.layer,
-            },
-          },
-          h('strong', null, t('conversation')),
-          h(
-            'div',
-            { style: { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
-            h(
-              Action,
-              {
-                disabled: busy || sessionId === undefined,
-                onClick: () => {
-                  void runLocal('/' + CMD + ' reset');
-                },
-              },
-              t('enableAll'),
-            ),
-            h(
-              Action,
-              {
-                disabled: busy || sessionId === undefined,
-                onClick: () => {
-                  void runLocal('/' + CMD + ' none');
-                },
-              },
-              t('disableAll'),
-            ),
-            h(
-              Action,
-              {
-                disabled: busy || sessionId === undefined,
-                primary: true,
-                onClick: () => {
-                  void runLocal('/' + CMD + ' apply-all');
-                },
-              },
-              t('applyToAll'),
-            ),
-          ),
-          h(
-            'div',
-            { style: { marginTop: '8px', color: COLORS.text2, font: '12px/1.5 inherit' } },
-            disabledLocal.size === 0
-              ? t('allOn')
-              : fill(t('off'), { n: disabledLocal.size }) + ': ' + [...disabledLocal].join(', '),
-          ),
-        ),
-
-        h(
-          'section',
-          {
-            style: {
-              border: '1px solid ' + COLORS.border,
-              borderRadius: '10px',
-              padding: '12px',
             },
           },
           h('strong', null, t('catalogue')),
@@ -1161,149 +1026,8 @@ window.__ModuleLoader__.load({
       );
     }
 
-    /** The header control and its dropdown panel. */
-    function ToolSwitchControl(props, ctx, t) {
-      const sessionId = props.sessionId;
-      const [open, setOpen] = React.useState(false);
-      const [disabled, setDisabled] = React.useState(() => new Set());
-      const [busy, setBusy] = React.useState(false);
-      const [error, setError] = React.useState('');
-
-      const refresh = React.useCallback(() => {
-        const binding = ctx.sessions.binding(sessionId);
-        if (binding === undefined) return;
-        setDisabled(foldWindow(binding.eventSource.getSnapshot()).disabled);
-      }, [ctx, sessionId]);
-
-      React.useEffect(() => {
-        if (!open) return undefined;
-        const binding = ctx.sessions.binding(sessionId);
-        if (binding === undefined) return undefined;
-        refresh();
-        return binding.eventSource.subscribe(() => refresh());
-      }, [open, ctx, sessionId, refresh]);
-
-      const run = async (line) => {
-        if (busy) return;
-        setBusy(true);
-        setError('');
-        try {
-          const outcome = await runCommand(ctx, sessionId, line);
-          if (outcome.ok === false) setError(fill(t('failed'), { reason: outcome.reason }));
-        } finally {
-          setBusy(false);
-        }
-      };
-
-      const summary = disabled.size === 0 ? t('allOn') : fill(t('off'), { n: disabled.size });
-
-      const button = h(
-        'button',
-        {
-          type: 'button',
-          title: t('title'),
-          'aria-label': t('title'),
-          'aria-expanded': open,
-          onClick: () => setOpen((value) => !value),
-          style: {
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            height: '28px',
-            padding: '0 8px',
-            border: '1px solid ' + (open ? COLORS.brand : COLORS.border),
-            borderRadius: '7px',
-            background: open ? COLORS.layer2 : 'transparent',
-            color: COLORS.text2,
-            font: '12px/1 inherit',
-            cursor: 'pointer',
-          },
-        },
-        h(
-          'svg',
-          { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true },
-          h('rect', { x: 1, y: 3, width: 14, height: 4, rx: 2, fill: COLORS.brand }),
-          h('circle', { cx: 11, cy: 5, r: 1.5, fill: '#fff' }),
-          h('rect', { x: 1, y: 9, width: 14, height: 4, rx: 2, fill: COLORS.idle }),
-          h('circle', { cx: 5, cy: 11, r: 1.5, fill: '#fff' }),
-        ),
-        h('span', null, summary),
-      );
-
-      if (!open) return button;
-
-      const panel = h(
-        'div',
-        {
-          role: 'dialog',
-          'aria-label': t('title'),
-          style: {
-            position: 'fixed',
-            top: '52px',
-            right: '12px',
-            width: '300px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            padding: '10px',
-            border: '1px solid ' + COLORS.border,
-            borderRadius: '10px',
-            background: COLORS.base,
-            color: COLORS.text,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            font: '13px/1.4 inherit',
-            zIndex: 1000,
-          },
-        },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-          h('strong', { style: { fontWeight: 600 } }, t('title')),
-          h(
-            'button',
-            {
-              type: 'button',
-              onClick: () => setOpen(false),
-              'aria-label': t('cancel'),
-              style: { border: 'none', background: 'transparent', color: COLORS.text2, cursor: 'pointer', font: '16px/1 inherit' },
-            },
-            '×',
-          ),
-        ),
-        error.length > 0 ? h('div', { style: { color: COLORS.error } }, error) : null,
-        h(
-          'div',
-          { style: { color: COLORS.text2, fontSize: '12px' } },
-          disabled.size === 0 ? t('allOn') : fill(t('off'), { n: disabled.size }),
-        ),
-        h(
-          'div',
-          { style: { display: 'flex', gap: '6px' } },
-          h(Action, { onClick: () => void run('/' + CMD + ' reset'), disabled: busy }, t('enableAll')),
-          h(Action, { onClick: () => void run('/' + CMD + ' none'), disabled: busy }, t('disableAll')),
-          h(
-            Action,
-            { onClick: () => void run('/' + CMD + ' apply-all'), disabled: busy, primary: true },
-            t('applyToAll'),
-          ),
-        ),
-      );
-
-      return h(
-        'div',
-        { style: { display: 'inline-flex' } },
-        button,
-        h('div', {
-          onClick: () => setOpen(false),
-          style: { position: 'fixed', inset: 0, zIndex: 999, background: 'transparent' },
-          'aria-hidden': true,
-        }),
-        panel,
-      );
-    }
-
     return {
-      inject: ['slots', 'sessions'],
+      inject: ['slots'],
       apply(ctx) {
         const prefersChinese = String(navigator.language || 'en').toLowerCase().startsWith('zh');
         let t = (key, values) => {

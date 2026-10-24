@@ -460,26 +460,27 @@ export function apply(ctx) {
    * @param {object} agent - the agent being created.
    */
   const adoptAgent = (agent) => {
-    const session = agent.session
-    if (session === undefined || typeof session.ownEvents !== 'function') return
     const known = switchableNames()
     const disabled = new Set(globalDefault)
-    for (const event of session.ownEvents()) {
-      try {
-        if (event.type === 'command/run' && event.data?.name === COMMAND_NAME) {
-          const request = parseRawInput(event.data.args)
-          applyRecord(disabled, known, request)
-        } else if (event.type === 'tool/call' && event.data?.name === TOOL_NAME) {
-          const args = JSON.parse(event.data.arguments)
-          applyRecord(disabled, known, {
-            action: typeof args?.action === 'string' ? args.action : 'list',
-            names: Array.isArray(args?.tools) ? args.tools.map(String) : [],
-            group: typeof args?.group === 'string' ? args.group : '',
-            enabled: args?.enabled !== false,
-          })
+    const session = agent.session
+    if (session !== undefined && typeof session.ownEvents === 'function') {
+      for (const event of session.ownEvents()) {
+        try {
+          if (event.type === 'command/run' && event.data?.name === COMMAND_NAME) {
+            const request = parseRawInput(event.data.args)
+            applyRecord(disabled, known, request)
+          } else if (event.type === 'tool/call' && event.data?.name === TOOL_NAME) {
+            const args = JSON.parse(event.data.arguments)
+            applyRecord(disabled, known, {
+              action: typeof args?.action === 'string' ? args.action : 'list',
+              names: Array.isArray(args?.tools) ? args.tools.map(String) : [],
+              group: typeof args?.group === 'string' ? args.group : '',
+              enabled: args?.enabled !== false,
+            })
+          }
+        } catch {
+          // A malformed historical record must not block the conversation.
         }
-      } catch {
-        // A malformed historical record must not block the conversation.
       }
     }
     // Historical commands may name tools that are no longer switchable.
